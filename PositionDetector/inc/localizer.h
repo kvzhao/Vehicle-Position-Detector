@@ -18,8 +18,13 @@ class localizer {
         bool getFrame();
 
         void detectVehicle();
+        void detectTarget();
 
         void showResult();
+
+        void setCamshiftParameters(int,int,int);
+        void setROI_Rect(int, int, int, int);
+        void setHoughCircleParameters(int,int);
 
     private:
         VideoCapture cap;
@@ -29,7 +34,6 @@ class localizer {
         Rect trackWindow;
     	Point origin;
 	    Rect selection;
-
 
         int camNum;
         int hsize = 16;
@@ -43,8 +47,12 @@ class localizer {
     	bool showHist = true;
 
         bool isResultVisible = false;
+        bool isCamshiftSet = false;
 
+        // Camshift Parameters
     	int vmin = 10, vmax = 256, smin = 30;
+        int roi_x, roi_y, roi_w, roi_h;
+        // Hough Circle Parameters
 
         string nameMainFrame = "Main Frame";
         string nameHistFrame = "Histograme";
