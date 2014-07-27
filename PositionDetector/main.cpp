@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
 
         Point3d v_pose = posFinder.detectVehicle();
         // cout << "Vehicle: " << v_pose << "\n";
-        posFinder.detectTargets();
+        vector<Vec3f> town_pos = posFinder.detectTargets();
 
         posFinder.showResult();
         posFinder.showDataInfo();
