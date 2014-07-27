@@ -299,15 +299,22 @@ void localizer::electedRemoval(vector<Vec3f> &cur) {
     vector<Vec3f>::iterator it;
     int tol = 20;
     for (size_t i = 0; i < target_list.size(); i++) {
+        bool isFound = false;
         for (it = cur.begin(); it < cur.end(); it++) {
             if(fabs((*it)[XCOORD] - target_list[i][XCOORD]) <= tol
              && fabs((*it)[YCOORD]- target_list[i][YCOORD]) <= tol) {
                 // which means found
+                isFound = true;
+                cout << "list " << target_list[i][LABEL] << " still exist\n";
+                break;
             } else {
                 // target is not found in data
-                target_list[i][VOTE] -= 5;
-                cout << target_list[i] << "seems not shown\n";
+                isFound = false;
             }
+        }
+
+        if (!isFound) {
+            target_list[i][VOTE] -= 3;
         }
 
         if( target_list[i][VOTE] <= 0) {
@@ -322,7 +329,7 @@ void localizer::showDataInfo() {
     cout << "Candidate contains " << candidate_list.size() << ", target " << target_list.size() << endl;
 }
 
-vector<Vec6f> localizer::detectTargets() {
+vector<Vec3f> localizer::detectTargets() {
   vector<Vec3f> circles;
   /// Apply the Hough Transform to find the circles
   HoughCircles( gray_img, circles, CV_HOUGH_GRADIENT, 1, gray_img.rows/8,
@@ -350,7 +357,17 @@ vector<Vec6f> localizer::detectTargets() {
         electedRemoval(circles);
     }
 
-  return target_list;
+  vector<Vec3f> v;
+  for (size_t i =0; i < target_list.size(); i++) {
+      if (target_list[i][VISIBLE]) {
+      Vec3f p(target_list[i][XCOORD],
+              target_list[i][YCOORD],
+              target_list[i][LABEL]);
+        v.push_back(p);
+      }
+  }
+
+  return v;
 }
 
 /*

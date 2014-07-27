@@ -24,7 +24,7 @@ class localizer {
         bool getFrame();
 
         Point3d detectVehicle();
-        vector<Vec6f> detectTargets();
+        vector<Vec3f> detectTargets();
 
         void showResult();
         void showDataInfo();
