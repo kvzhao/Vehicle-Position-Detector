@@ -19,8 +19,9 @@ int main(int argc, char* argv[]) {
   localizer posFinder;
 
   // create a file-reading object
-  ifstream fin;
+  ifstream fin, fin2;
   fin.open("camshiftParameters.txt"); // open a file
+  fin2.open("houghParameters.txt");
 
   if (!fin.good()) {
 	cout << "Find find Camshift paremters, init with naive param.\n";
@@ -51,11 +52,36 @@ int main(int argc, char* argv[]) {
     h    = atoi( vparams[6].c_str() );
     cout << "Vmin: " << Vmin << "\nVmax: " << Vmax << "\nSmin: " << Smin << "\n";
     cout << "x: " << x <<" y: " << y << " w: " << w << " h: " << h << endl;
+
     posFinder.setCamshiftParameters(Vmin, Vmax, Smin);
     posFinder.setROI_Rect(x, y, w, h);
   }
 
-    /* Rect
+  if(!fin2.good()) {
+	cout << "Find find Hough Circle paremters, init with naive param.\n";
+    posFinder.setHoughCircleParameters(200, 100, 0, 0);
+  } else {
+    int edge, cen, min, max;
+    // read each line of the file
+    string line;
+    vector<string> vparams;
+    // read each line
+    while (getline(fin2, line)) {
+        istringstream iss(line);
+        string word;
+        while (iss >> word)
+            vparams.push_back (word);
+    }
+    fin2.close();
+    edge = atoi( vparams[0].c_str() );
+    cen  = atoi( vparams[1].c_str() );
+    min  = atoi( vparams[2].c_str() );
+    max  = atoi( vparams[3].c_str() );
+    cout << "edge: " << edge << " cen: " << cen << " min: " << min << " max: " << max << "\n";
+    posFinder.setHoughCircleParameters(edge, cen, min ,max);
+  }
+
+    /*
      * Camshift parameters
      * Hough circle parameters
      */
@@ -63,8 +89,12 @@ int main(int argc, char* argv[]) {
 
     while(posFinder.getFrame()) {
 
-        posFinder.detectVehicle();
+        Point3d v_pose = posFinder.detectVehicle();
+        // cout << "Vehicle: " << v_pose << "\n";
+        posFinder.detectTargets();
+
         posFinder.showResult();
+        posFinder.showDataInfo();
 
         char c = waitKey(15);
         if( c == 27 )

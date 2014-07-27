@@ -1,0 +1,300 @@
+#include "localizer.h"
+
+#include <iostream>
+#include <algorithm>
+
+using namespace std;
+
+localizer::localizer()
+{
+    camNum = 1;
+    isResultVisible = true;
+    namedWindow( nameMainFrame, 0 );
+}
+
+void localizer::init() {
+
+    cap.open(camNum);
+    if( !cap.isOpened() )
+    {
+        cout << "***Could not initialize capturing...***\n";
+        cout << "Current parameter's value: \n";
+        //parser.printMessage();
+    }
+    if (isCamshiftSet) {
+            trackObject = -1;
+    }
+}
+
+void localizer::setCamshiftParameters(int Vmin, int Vmax, int Smin) {
+    // Rude
+    if (Vmin) vmin = Vmin;
+    if (Vmax) vmax = Vmax;
+    if (Smin) smin = Smin;
+}
+
+void localizer::setROI_Rect(int x, int y, int w, int h) {
+    roi_x = x;
+    roi_y = y;
+    roi_w = w;
+    roi_h = h;
+
+    selection.x = roi_x;
+    selection.y = roi_y;
+    selection.width = roi_w;
+    selection.height = roi_h;
+
+    isCamshiftSet = true;
+}
+
+void localizer::setHoughCircleParameters(int edge,int center, int rmin, int rmax) {
+    // Set
+    if (edgeDet != edge) edgeDet = edge;
+    if (centerDet != center) centerDet = center;
+    if (min_radius != rmin) min_radius = rmin;
+    if (max_radius != rmax) max_radius = rmax;
+}
+
+void localizer::showResult() {
+
+    if (isResultVisible) {
+
+        if (findTargets) {
+
+            for (size_t i = 0; i < target_list.size(); ++i) {
+                // Uncertain points shown as green
+                Point center(cvRound(target_list[i][0]), cvRound(target_list[i][1]));
+                int radius = cvRound(target_list[i][2]);
+                circle( image, center, 3, Scalar(0,0,255), -1, 8, 0 );
+                circle( image, center, radius, Scalar(0,0,255), 3, 8, 0 );
+            }
+        }
+
+        imshow(nameMainFrame, image);
+    }
+}
+
+bool localizer::getFrame() {
+        if( !paused )
+        {
+            cap >> frame;
+            if( frame.empty() )
+                return false;
+        }
+
+        frame.copyTo(image);
+
+        if( !paused )
+        {
+            cvtColor(image, hsv, COLOR_BGR2HSV);
+            cvtColor(image, gray_img, CV_BGR2GRAY);
+            GaussianBlur(gray_img, gray_img, Size(9,9), 2, 2);
+        }
+        else if( trackObject < 0 )
+            paused = false;
+
+        if( selectObject && selection.width > 0 && selection.height > 0 )
+        {
+            Mat roi(image, selection);
+            bitwise_not(roi, roi);
+        }
+
+        return true;
+}
+
+Point3d localizer::detectVehicle() {
+
+            if( trackObject )
+            {
+                int _vmin = vmin, _vmax = vmax;
+
+                inRange(hsv, Scalar(0, smin, MIN(_vmin,_vmax)),
+                        Scalar(180, 256, MAX(_vmin, _vmax)), mask);
+                int ch[] = {0, 0};
+                hue.create(hsv.size(), hsv.depth());
+                mixChannels(&hsv, 1, &hue, 1, ch, 1);
+
+                if( trackObject < 0 )
+                {
+                    Mat roi(hue, selection), maskroi(mask, selection);
+                    calcHist(&roi, 1, 0, maskroi, hist, 1, &hsize, &phranges);
+                    normalize(hist, hist, 0, 255, NORM_MINMAX);
+
+                    trackWindow = selection;
+                    trackObject = 1;
+
+                    histimg = Scalar::all(0);
+                    int binW = histimg.cols / hsize;
+                    Mat buf(1, hsize, CV_8UC3);
+                    for( int i = 0; i < hsize; i++ )
+                        buf.at<Vec3b>(i) = Vec3b(saturate_cast<uchar>(i*180./hsize), 255, 255);
+                    cvtColor(buf, buf, COLOR_HSV2BGR);
+
+                    for( int i = 0; i < hsize; i++ )
+                    {
+                        int val = saturate_cast<int>(hist.at<float>(i)*histimg.rows/255);
+                        rectangle( histimg, Point(i*binW,histimg.rows),
+                                   Point((i+1)*binW,histimg.rows - val),
+                                   Scalar(buf.at<Vec3b>(i)), -1, 8 );
+                    }
+                }
+
+                calcBackProject(&hue, 1, 0, hist, backproj, &phranges);
+                backproj &= mask;
+                RotatedRect trackBox = CamShift(backproj, trackWindow,
+                                    TermCriteria( TermCriteria::EPS | TermCriteria::COUNT, 10, 1 ));
+                if( trackWindow.area() <= 1 )
+                {
+                    int cols = backproj.cols, rows = backproj.rows, r = (MIN(cols, rows) + 5)/6;
+                    trackWindow = Rect(trackWindow.x - r, trackWindow.y - r,
+                                       trackWindow.x + r, trackWindow.y + r) &
+                                  Rect(0, 0, cols, rows);
+                }
+
+                Point3d pose(trackBox.center.x, trackBox.center.y, trackBox.angle);
+
+                if( backprojMode )
+                    cvtColor( backproj, image, COLOR_GRAY2BGR );
+                ellipse( image, trackBox, Scalar(0,0,255), 3, CV_AA);
+
+                return pose;
+            }
+}
+
+bool targetSortCriteria(const Vec3f &a, const Vec3f &b) {
+    return (a[0] + a[1]) > (b[0] + b[1]);
+}
+
+vector<Vec4f> localizer::detectTargets() {
+  vector<Vec3f> circles;
+  /// Apply the Hough Transform to find the circles
+  HoughCircles( gray_img, circles, CV_HOUGH_GRADIENT, 1, gray_img.rows/8,
+          edgeDet,
+          centerDet,
+          min_radius,
+          max_radius);
+
+  std::sort(circles.begin(), circles.end(), targetSortCriteria);
+
+  // init the candidates
+  if ( target_candidates.size() == 0 && circles.size() != 0 ) {
+      // If no target list, initialize it
+      cout << "candidates intialize\n";
+      for (size_t i = 0; i < circles.size(); ++i) {
+          Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+          Vec4f p(cvRound(circles[i][0]),
+                  cvRound(circles[i][1]),
+                  cvRound(circles[i][2]),
+                  0 /* tickets */ );
+          // Initialize the candidates vector
+          target_candidates.push_back(p);
+          findTargets = true;
+      }
+    } else {
+        /* else voting the list */
+        voting(circles);
+    }
+
+  return target_list;
+}
+/*
+ * Search circles in candidates -> push to target_list
+ */
+
+struct FindInData: public std::binary_function<Vec4f, Vec3f, bool> {
+    bool operator() (const Vec4f &a, const Vec3f &b) const {
+        return a[0] == b[0] && a[1] == b[1];
+    }
+};
+
+bool compare(Vec4f c1, Vec4f c2)
+{
+    if(c1.data[0] < c2.data[0])
+        return true;
+    else if(c1.data[0] > c2.data[0])
+        return false;
+    else
+    {
+        if(c1.data[1] <= c2.data[1])
+            return true;
+        else
+            return false;
+    }
+}
+
+void sort_Label(vector<Vec4f> &list, vector<Vec4f> &vec)
+{
+    vector<Vec4f>::iterator iter;
+    sort(vec.begin(),vec.end(),compare);
+    int label = 1;
+    for(iter = vec.begin();iter != vec.end();iter++)
+    {
+        (*iter).data[LABEL] = label++;
+        list.push_back((*iter));
+    }
+}
+
+void Label(vector<Vec4f> &list, vector<Vec4f> &vec,float error)
+{
+    vector<Vec4f>::iterator iter;
+    vector<Vec4f>::iterator iter2;
+    int label = list.size()+1;
+    for(iter = vec.begin();iter != vec.end();iter++)
+    {
+        int gotit = 0;
+        for(iter2 = list.begin();iter2 != list.end();iter2++)
+        {
+            if(fabs((*iter).data[XCOORD] - (*iter2).data[XCOORD]) <= error && fabs((*iter).data[YCOORD]- (*iter2).data[YCOORD]) <= error)
+            {
+                gotit = 1;
+                (*iter).data[LABEL] = (*iter2).data[LABEL];
+            }
+        }
+        if(gotit == 0)
+        {
+            (*iter).data[LABEL] = label++;
+            list.push_back(*iter);
+        }
+    }
+}
+
+void localizer::voting(vector<Vec3f> &input) {
+    const int voting_thres = 100;
+    // Search
+    for (size_t i = 0; input.size(); ++i) {
+        vector<Vec4f>::iterator it = find_if(target_candidates.begin(),
+                                          target_candidates.end(),
+                                          std::bind2nd(FindInData(), input[i]));
+        cout << "iterator: " << *it << "\n";
+        /*
+        if (it == target_candidates.end()) {
+            // can not find, then add it to the candidates
+            //target_candidates.push_back(*it);
+
+        } else {
+            // found
+        }
+        */
+    }
+    /*
+    // Judgement
+    for (size_t i = 0; i < target_candidates.size(); ++i) {
+        if (target_candidates[i][3] >= voting_thres) {
+            static int label = 0;
+            Vec4f p(target_candidates[i][0],
+                    target_candidates[i][1],
+                    target_candidates[i][2],
+                    label);
+            target_list.push_back(p);
+            label++;
+        }
+    }
+    // check consistency
+     for (size_t i = 0; i < target_candidates.size(); ++i) {
+     // Uncertain points shown as green
+     Point center(cvRound(target_candidates[i][0]), cvRound(target_candidates[i][1]));
+        int radius = cvRound(target_candidates[i][2]);
+        circle( image, center, 3, Scalar(0,0,255), -1, 8, 0 );
+        circle( image, center, radius, Scalar(0,0,255), 3, 8, 0 );
+    }*/
+}
