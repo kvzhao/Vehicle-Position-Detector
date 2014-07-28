@@ -81,6 +81,8 @@ void localizer::showResult() {
                 Point center(cvRound(target_list[i][XCOORD]), cvRound(target_list[i][YCOORD]));
                 int radius = cvRound(target_list[i][RADIUS]);
                 if (target_list[i][VISIBLE]) {
+                    string labelstr = to_string((int)target_list[i][LABEL]);
+                    putText( image, labelstr, center, FONT_HERSHEY_COMPLEX, 1, Scalar(255, 0, 0));
                     circle( image, center, 3, Scalar(0,225,0), -1, 8, 0 );
                     circle( image, center, radius, Scalar(0,255,0), 3, 8, 0 );
                 } else {
@@ -305,6 +307,11 @@ void localizer::electedRemoval(vector<Vec3f> &cur) {
              && fabs((*it)[YCOORD]- target_list[i][YCOORD]) <= tol) {
                 // which means found
                 isFound = true;
+                target_list[i][VOTE] += .05;
+                if (target_list[i][VISIBLE] == 0 ) {
+                    target_list[i][VISIBLE] = 1;
+                    target_list[i][VOTE] = 32;
+                }
                 cout << "list " << target_list[i][LABEL] << " still exist\n";
                 break;
             } else {
@@ -314,7 +321,7 @@ void localizer::electedRemoval(vector<Vec3f> &cur) {
         }
 
         if (!isFound) {
-            target_list[i][VOTE] -= 3;
+            target_list[i][VOTE] -= 2;
         }
 
         if( target_list[i][VOTE] <= 0) {
@@ -369,13 +376,4 @@ vector<Vec3f> localizer::detectTargets() {
 
   return v;
 }
-
-/*
- * Search circles in candidates -> push to target_list
- */
-struct FindInData: public std::binary_function<Vec4f, Vec3f, bool> {
-    bool operator() (const Vec4f &a, const Vec3f &b) const {
-        return a[0] == b[0] && a[1] == b[1];
-    }
-};
 

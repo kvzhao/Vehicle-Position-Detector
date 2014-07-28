@@ -70,21 +70,13 @@ class localizer {
         /* x, y, r, votes */
         vector<Vec4f> candidate_list;
 
-        void voting(vector<Vec3f> &);
-
-        void sort_Label(vector<Vec4f> &data);
-
         // extend data from vec3f to candidate list vec4f
         void putDataInCandidates(vector<Vec3f> &data);
-
-        void updateCandidates(vector<Vec3f> &data);
 
         void voteCandidates(vector<Vec3f> &data, int tol);
         void candidatesRuling();
         void candidatesPromotion();
         void electedRemoval(vector<Vec3f> &);
-
-        void labelConsistency(vector<Vec4f> &data, double error);
 
         // Camshift Parameters
     	int vmin = 10, vmax = 256, smin = 30;
